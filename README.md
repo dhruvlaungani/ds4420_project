@@ -16,7 +16,8 @@ Can you predict whether a song will be a Top 10 hit after just 2–3 weeks on th
 
 ## Phase I Contents
 - `literature_review.pdf` — lit review covering our approach
-- `spotify_merged.csv` - proof that we started. We have cleaned the data and merged it. Hopefully that is enough
+- `spotify_merged.csv` - proof that we started. We have cleaned the data and merged it. Original datsets can be seen below
+- `arma_poc.png` - showcase of our initial code for our AR/MA model structure.
 ---
 
 ## Datasets
