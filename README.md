@@ -15,9 +15,8 @@ Can you predict whether a song will be a Top 10 hit after just 2–3 weeks on th
 ---
 
 ## Phase I Contents
-- `literature_review.pdf` — lit review covering prior work and our approach
-- `arma_poc.ipynb` — proof-of-concept AR/MA model on the first 21-day stream window
-
+- `literature_review.pdf` — lit review covering our approach
+- `spotify_merged.csv` - proof that we started. We have cleaned the data and merged it. Hopefully that is enough
 ---
 
 ## Datasets
