@@ -1,2 +1,0 @@
-# Automatic repo access check failed
-# delete this file once push access confirmed
