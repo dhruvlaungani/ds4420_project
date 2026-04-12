@@ -1,0 +1,180 @@
+---
+title: "FinalProj_BayesML_RCode"
+output: html_document
+date: "2026-04-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+DS 4420 - Spring 2026
+Bayesian Logistic Regression: Predicting Spotify Top 10
+Dhruv Laungani & Lucas Tolman
+
+
+```{r}
+library(brms)
+library(ggplot2)
+
+# loads
+df <- read.csv("arma_features.csv")
+df$top10 <- as.factor(df$top10)
+
+# log-scale mean_streams
+df$log_mean_streams <- log(df$mean_streams)
+
+# standardize
+predictors <- c("ar1_coef", "ma1_coef", "log_mean_streams", "trend_slope",
+                "volatility", "early_late_ratio",
+                "danceability", "energy", "valence",
+                "acousticness", "loudness", "speechiness")
+
+df_scaled <- df
+df_scaled[, predictors] <- scale(df[, predictors])
+
+# train/test split — 80/20
+set.seed(42)
+idx        <- sample(1:nrow(df_scaled), floor(0.8 * nrow(df_scaled)))
+train      <- df_scaled[ idx, ]
+test       <- df_scaled[-idx, ]
+ 
+cat("Train:", nrow(train), "| Test:", nrow(test), "\n")
+cat("Top10 in train:\n"); print(table(train$top10))
+
+# priors
+default_prior(top10 ~ ar1_coef + ma1_coef + log_mean_streams + trend_slope +
+                       volatility + early_late_ratio +
+                       danceability + energy + valence +
+                       acousticness + loudness + speechiness,
+              data = train,
+              family = bernoulli("logit"))
+
+# logistic regression on standardized predictors
+manual_prior <- c(
+  prior(student_t(4, 0, 5), class = "Intercept"),
+  prior(normal(0, 2), class = "b", coef = "ar1_coef"),
+  prior(normal(0, 2), class = "b", coef = "ma1_coef"),
+  prior(normal(0, 2), class = "b", coef = "log_mean_streams"),
+  prior(normal(0, 2), class = "b", coef = "trend_slope"),
+  prior(normal(0, 2), class = "b", coef = "volatility"),
+  prior(normal(0, 2), class = "b", coef = "early_late_ratio"),
+  prior(normal(0, 2), class = "b", coef = "danceability"),
+  prior(normal(0, 2), class = "b", coef = "energy"),
+  prior(normal(0, 2), class = "b", coef = "valence"),
+  prior(normal(0, 2), class = "b", coef = "acousticness"),
+  prior(normal(0, 2), class = "b", coef = "loudness"),
+  prior(normal(0, 2), class = "b", coef = "speechiness")
+)
+
+
+# fit model
+fit <- brm(
+  top10 ~ ar1_coef + ma1_coef + log_mean_streams + trend_slope +
+          volatility + early_late_ratio +
+          danceability + energy + valence +
+          acousticness + loudness + speechiness,
+  family = bernoulli("logit"),
+  data = train,
+  prior = manual_prior,
+  chains = 4,
+  iter = 2000,
+  warmup = 500,
+  thin = 2,
+  cores = 4,
+  seed = 42
+)
+
+
+# summarize
+summary(fit)
+
+
+# posterior coeff plot
+mcmc_plot(fit, type = "intervals", prob = 0.80, prob_outer = 0.95) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Posterior Coefficient Estimates (80% and 95% CI)",
+       subtitle = "Features with intervals not crossing zero are credibly predictive",
+       x = "Coefficient estimate (log-odds scale)",
+       y = "") +
+  theme_minimal(base_size = 13)
+
+
+# conditional effects
+plot(conditional_effects(fit, "log_mean_streams"),
+     theme = theme_minimal()) 
+
+plot(conditional_effects(fit, "ar1_coef"),
+     theme = theme_minimal())
+
+plot(conditional_effects(fit, "trend_slope"),
+     theme = theme_minimal())
+
+plot(conditional_effects(fit, "energy"),
+     theme = theme_minimal())
+
+
+# test set predictions
+post_preds <- posterior_predict(fit, newdata = test)
+pred_probs <- colMeans(post_preds == "1")
+pred_class <- ifelse(pred_probs >= 0.5, 1, 0)
+true_class <- as.numeric(as.character(test$top10))
+
+# accuracy and confusion matrix
+accuracy <- mean(pred_class == true_class)
+cat("Test Accuracy:", round(accuracy, 3), "\n")
+print(table(Predicted = pred_class, Actual = true_class))
+
+# posterior predictive distribution for a single example song
+high_idx <- which(test$log_mean_streams == max(test$log_mean_streams))[1]
+low_idx  <- which(test$log_mean_streams == min(test$log_mean_streams))[1]
+
+hist(post_preds[, high_idx],
+     main = paste("Post. Pred. Dist —", test$title[high_idx]),
+     xlab = "Predicted Top 10", col = "steelblue")
+
+hist(post_preds[, low_idx],
+     main = paste("Post. Pred. Dist —", test$title[low_idx]),
+     xlab = "Predicted Top 10", col = "salmon")
+
+
+# posterior sigmoid distributions for two example songs
+post_draws <- as.data.frame(fit)
+
+sigmoid <- function(x) 1 / (1 + exp(-x))
+
+post_prob <- function(song_row) {
+  x <- as.numeric(song_row[predictors])
+  lp <- post_draws$b_Intercept +
+        post_draws$b_ar1_coef * x[1] +
+        post_draws$b_ma1_coef * x[2] +
+        post_draws$b_log_mean_streams * x[3] +
+        post_draws$b_trend_slope * x[4] +
+        post_draws$b_volatility * x[5] +
+        post_draws$b_early_late_ratio * x[6] +
+        post_draws$b_danceability * x[7] +
+        post_draws$b_energy * x[8] +
+        post_draws$b_valence * x[9] +
+        post_draws$b_acousticness * x[10] +
+        post_draws$b_loudness * x[11] +
+        post_draws$b_speechiness * x[12]
+  sigmoid(lp)
+}
+
+probs_high <- post_prob(test[high_idx, ])
+probs_low  <- post_prob(test[low_idx,  ])
+
+hist(probs_high,
+     main = paste("P(Top 10) —", test$title[high_idx]),
+     xlab = "Posterior probability", col = "steelblue", xlim = c(0, 1))
+abline(v = mean(probs_high), col = "red", lwd = 2)
+
+hist(probs_low,
+     main = paste("P(Top 10) —", test$title[low_idx]),
+     xlab = "Posterior probability", col = "salmon", xlim = c(0, 1))
+abline(v = mean(probs_low), col = "red", lwd = 2)
+
+cat("Mean P(Top 10) for high song:", round(mean(probs_high), 3), "\n")
+cat("Mean P(Top 10) for low song: ", round(mean(probs_low),  3), "\n")
+
+```
